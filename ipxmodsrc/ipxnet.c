@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <mem.h>
+#include <i86.h>
 #include <dos.h>
 
 #include "ipxnet.h"

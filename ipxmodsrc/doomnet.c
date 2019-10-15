@@ -1,10 +1,10 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <process.h>
-#include <conio.h>
+#include <i86.h>
 #include <dos.h>
 #include <io.h>
+#include <errno.h>
 
 #include "doomnet.h"
 
@@ -27,14 +27,17 @@ extern char **myargv;
 // short drone;         // 1 = drone
 //
 
-const char *launchbins[6] = {"doom2.exe", "doom.exe", "hexen.exe", "heretic.exe", "strife1.exe", 0};
+const char *launchbins[7] = {"doom2.exe", "nr4tl.exe", "doom.exe", "hexen.exe", "heretic.exe", "strife1.exe", NULL};
+#define TMPRESPFILE "IPX$$$.TMP"
 
 void LaunchDOOM (void)
 {
+  FILE *respfp;
   char *newargs[99];
   char adrstring[10];
+  char respparm[16];
   long flatadr;
-  int i, p;
+  int i, p, r;
 
   // prepare for DOOM
   doomcom.id = DOOMCOM_ID;
@@ -51,28 +54,49 @@ void LaunchDOOM (void)
   sprintf(adrstring, "%lu", flatadr);
   newargs[myargc + 1] = adrstring;
   newargs[myargc + 2] = NULL;
-
+  
+  printf ("Launching game...\n");
+  
+  // write args to a temporary response file to bypass process.h
+  // spawnv/spawnl argument list limitations
+  respfp = fopen (TMPRESPFILE, "w");
+  if (!respfp)
+    Error ("Cannot open response file \"%s\" for writing\n", TMPRESPFILE);
+  
+  for (i=1; newargs[i] != NULL; i++)
+    fprintf (respfp, "%s\n", newargs[i]);
+    
+  fclose (respfp);
+  
+  sprintf (respparm, "@%s", TMPRESPFILE);
+  
   // user specified game command?
   p = CheckParmWithArgs("-exec", 1);
   if (p)
   {
-    spawnv (P_WAIT, myargv[p+1], (const char **)newargs);
-    printf("\nReturned from \"%s\".\n", myargv[p+1]);
+    r = spawnl (P_WAIT, myargv[p+1], myargv[p+1], respparm, 0);
+    if (r == -1)
+      Error ("Spawning \"%s\" failed (%s)", myargv[p+1],strerror(errno));
+      
+    printf("Returned from \"%s\".", myargv[p+1]);
     return;
   }
   // no, try to look for one in the current dir
   else
   {
-    for (i=0; launchbins[i]; i++)
+    for (i=0; launchbins[i] != NULL; i++)
     {
       if (!access(launchbins[i], 0))
       {
-        spawnv (P_WAIT, launchbins[i], (const char **)newargs);
-        printf("\nReturned from \"%s\".\n", launchbins[i]);
+        r = spawnl (P_WAIT, launchbins[i], launchbins[i], respparm, 0);
+	if (r == -1)
+	  Error ("Spawning \"%s\" failed (%s)", launchbins[i], strerror(errno));
+	  
+        printf("Returned from \"%s\".", launchbins[i]);
 	return;
       }
     }
     
-    Error ("\nCouldn't find a game to launch and none specified with -exec.\n");
+    Error ("Couldn't find a game to launch and none specified with -exec.");
   }
 }

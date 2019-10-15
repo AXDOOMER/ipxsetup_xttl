@@ -1,12 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <i86.h>
 #include <dos.h>
 #include <string.h>
-#include <process.h>
 #include <stdarg.h>
 #include <bios.h>
-#include <i86.h>
-#include <graph.h>
 
 #include "ipxnet.h"
 
@@ -29,6 +27,7 @@ void Error (char *error, ...)
   if (vectorishooked)
     _dos_setvect(doomcom.intnum, olddoomvect);
 
+  printf("\nERROR: ");
   va_start(argptr, error);
   vprintf(error, argptr);
   va_end(argptr);
@@ -82,6 +81,8 @@ void interrupt NetISR (void)
 // Exits with nodesetup[0..numnodes] and nodeadr[0..numnodes] filled in
 //
 
+static const char *waitchars = "|/-\\456789";
+
 void LookForNodes (void)
 {
   int i, j, k;
@@ -97,9 +98,9 @@ void LookForNodes (void)
   // the playernumbers are assigned by netid
   
   printf ("Attempting to find all players for %i player net play. "\
-          "Press ESC to exit.\n", numnetnodes);
+          "Press ESC to exit.\n\n", numnetnodes);
   
-  printf("Looking for a node");
+  printf("Looking for a node [ ]\b\b");
 
   oldsec = -1;
   setup = (setupdata_t*)&doomcom.data;
@@ -116,7 +117,7 @@ void LookForNodes (void)
     while (_bios_keybrd(1))
     {
       if ((_bios_keybrd(0) & 0xff) == 27)
-        Error("\n\nNetwork game synchronization aborted.");
+        Error("\rNetwork game synchronization aborted.");
     }
     
     // listen to the network
@@ -131,7 +132,7 @@ void LookForNodes (void)
       {
         // an early game packet, not a setup packet
         if (doomcom.remotenode == -1)
-          Error("Got an unknown game packet during setup");
+          Error("\rGot an unknown game packet during setup");
         
 	// if it allready started, it must have found all nodes
         dest->nodesfound = dest->nodeswanted;
@@ -150,10 +151,10 @@ void LookForNodes (void)
 
       doomcom.numnodes++;
 
-      printf("\nFound a node!\n");
+      printf("\rFound a node!         \n");
 
       if (doomcom.numnodes < numnetnodes)
-        printf("Looking for a node");
+        printf("Looking for a node [ ]\b\b");
     }
 
     // we are done if all nodes have found all other nodes
@@ -172,7 +173,8 @@ void LookForNodes (void)
       continue;
     oldsec = time.second;
 
-    printf("."); fflush(stdout);
+    printf("%c\b", waitchars[time.second%4]); fflush(stdout);
+    
     doomcom.datalength = sizeof(*setup);
 
     nodesetup[0].nodesfound = doomcom.numnodes;
@@ -182,6 +184,8 @@ void LookForNodes (void)
     SendPacket(MAXNETNODES); // send to all
   }
   while(1);
+  
+  printf ("\n");
 
   // count players
   total = 0;
@@ -298,10 +302,11 @@ void FindResponseFile (void)
 void ShowHelp (void)
 {
   printf (
+    "\n"\
     " -nodes #..........: Set number of players to # (default 2, range 1-8).\n"\
     " -dup #............: Set ticdup to # (default 1, range 1-9). Larger values will\n"\
     "                     reduce game frame rate but can help over slow links.\n"\
-    " -extratics #......: Set extratics to # (default 0, range 0-8). Larger values\n"\
+    " -extratics #......: Set extratics to # (default 0, range 0-7). Larger values\n"\
     "                     will use more bandwidth but can help over links that lose\n"\
     "                     packets.\n"\
     " -extratic.........: Set extratics to 1, for compatibility with source ports.\n"\
@@ -315,9 +320,37 @@ void ShowHelp (void)
     " -vector 0x##......: Use interrupt vector ## (in hexadecimal). If not specified\n"\
     "                     will try to find a free one between 0x60 and 0x66.\n"\
     " -exec cmd.........: Try to run \"cmd\" instead of looking for, in this order,\n"\
-    "                     \"doom2.exe\", \"doom.exe\", \"hexen.exe\", \"heretic.exe\",\n"\
-    "                     \"strife1.exe\".\n"\
+    "                     \"doom2.exe\", \"nr4tl.exe\", \"doom.exe\", \"hexen.exe\",\n"\
+    "                     \"heretic.exe\", \"strife1.exe\".\n"\
   );
+}
+
+// I tried using Watcom's graph.h functions here, but they bloat the executable
+// by over 22kB... though I wonder if anyone is really going to use this on
+// real hardware and is using a configuration that is so conventional memory
+// starved...
+
+// every line should be 80 chars long and without explicit newline/CR
+static const char *titlelines = "  IPX network driver for Doom, Heretic, Hexen and Strife (with modifications)   "\
+                                "  This version compiled on " __DATE__ " / " __TIME__ " by xttl @ doomworld.com/vb/   ";
+
+static void ShowTitle (void)
+{
+  union REGPACK regs;
+  
+  // set 80x25 16 color text mode using video bios, will also reset cursor
+  // position
+  regs.x.ax = 0x0002;  // AH=0x00 (set mode), AL=0x02 (mode 2 = 80x25 text with 16 colors)
+  intr (0x10, &regs);
+  
+  // print colored string using video bios
+  regs.x.ax = 0x1301;  // AH=0x13 (write string) AL=0x01 (write mode bit1 = update cursor)
+  regs.x.bx = 0x001a;  // BH=0x00 (vidpage 0) BL=0x1A (attribute, bright green on blue)
+  regs.x.cx = strlen(titlelines);
+  regs.x.dx = 0;       // DH,DL = start row & column
+  regs.x.es = FP_SEG (titlelines);
+  regs.x.bp = FP_OFF (titlelines); // ES:BP = address of string to write
+  intr (0x10, &regs);
 }
 
 int main (int argc, char **argv)
@@ -335,10 +368,7 @@ int main (int argc, char **argv)
   doomcom.skill = 2;
   doomcom.deathmatch = 0;
   
-  _clearscreen(_GCLEARSCREEN);
-  printf ("IPX network driver for Doom, Heretic, Hexen and Strife (with modifications)\n"\
-          "This version compiled on %s / %s by xttl @ doomworld.com/vb/\n"\
-	  "\n", __DATE__, __TIME__);
+  ShowTitle();
 
   myargc = argc;
   myargv = argv;
@@ -366,8 +396,8 @@ int main (int argc, char **argv)
   if (p)
   {
     doomcom.extratics = atoi (myargv[p+1]);
-    if (doomcom.extratics > 8)
-      doomcom.extratics = 8;
+    if (doomcom.extratics > 100)
+      doomcom.extratics = 100;
     else if (doomcom.extratics < 0)
       doomcom.extratics = 0;
   }
@@ -413,7 +443,7 @@ int main (int argc, char **argv)
     }
   }
   
-  printf ("Communicating with interrupt vector 0x%x\n", doomcom.intnum);
+  printf ("\nCommunicating with interrupt vector 0x%x\n", doomcom.intnum);
   
   p = CheckParmWithArgs("-port", 1);
   if (p)
