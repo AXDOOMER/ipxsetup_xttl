@@ -1,0 +1,14 @@
+- fixed crash when IPX wasn't enabled in DOSBox (possibly would have happened on real hardware too if no IPX driver was loaded but I don't know)
+
+- changed parameter -exe to -exec so it doesn't overlap with heretic.com if someone is still using that)
+
+- changed max nodes from 4 to 8 since the same driver works just fine with Hexen and Strife
+
+- it now looks for these game executables if -exec wasn't specified on command line (in this order): doom2.exe, doom.exe, hexen.exe, heretic.exe, strife1.exe.
+
+- added internal help message if you use -?, -h or -help
+
+New binary is still at http://koti.kapsi.fi/vv/ipxsetup.exe
+Source code here: http://koti.kapsi.fi/vv/ipxmodsrc.zip
+
+Source is for 16-bit Open Watcom. Original ipxsetup sources from id are for Borland C++ 3.1 but I ported it since Open Watcom can cross compile for DOS from under Windows or Linux and it is free.
