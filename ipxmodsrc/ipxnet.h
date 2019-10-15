@@ -18,6 +18,9 @@ typedef struct {
   short drone;
   short nodesfound;
   short nodeswanted;
+  
+  short dupwanted;
+  short plnumwanted;
 } setupdata_t;
 
 

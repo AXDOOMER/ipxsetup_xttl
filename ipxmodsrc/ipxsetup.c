@@ -27,7 +27,7 @@ void Error (char *error, ...)
   if (vectorishooked)
     _dos_setvect(doomcom.intnum, olddoomvect);
 
-  printf("\nERROR: ");
+  printf("ERROR: ");
   va_start(argptr, error);
   vprintf(error, argptr);
   va_end(argptr);
@@ -81,7 +81,7 @@ void interrupt NetISR (void)
 // Exits with nodesetup[0..numnodes] and nodeadr[0..numnodes] filled in
 //
 
-static const char *waitchars = "|/-\\456789";
+static const char waitchars[] = "|/-\\";
 
 void LookForNodes (void)
 {
@@ -92,7 +92,7 @@ void LookForNodes (void)
   int oldsec;
   setupdata_t *setup, *dest;
   char str[80];
-  int total, console;
+  // int console;
 
   // wait until we get [numnetnodes] packets, then start playing
   // the playernumbers are assigned by netid
@@ -100,7 +100,7 @@ void LookForNodes (void)
   printf ("Attempting to find all players for %i player net play. "\
           "Press ESC to exit.\n\n", numnetnodes);
   
-  printf("Looking for a node [ ]\b\b");
+  printf("Looking for a node... ");
 
   oldsec = -1;
   setup = (setupdata_t*)&doomcom.data;
@@ -110,9 +110,29 @@ void LookForNodes (void)
   nodesetup[0].nodesfound = 1;
   nodesetup[0].nodeswanted = numnetnodes;
   doomcom.numnodes = 1;
+  nodesetup[0].dupwanted = doomcom.ticdup;
+
+  // allow overriding the automatically assigned player number from command
+  // line because for some reason players will lag differently in netgames.
+  i = CheckParmWithArgs("-player", 1);
+  if (i)
+  {
+    j = atoi(myargv[i+1]);
+    if (j > numnetnodes)
+      j = numnetnodes;
+    else if (j < 1)
+      j = 1;
+  }
+  // use auto-assign
+  else
+    j = -1;
+  
+  nodesetup[0].plnumwanted = j;
 
   do
   {
+    printf("%c\b", waitchars[time.second%4]); fflush(stdout);
+
     // check for aborting
     while (_bios_keybrd(1))
     {
@@ -146,15 +166,14 @@ void LookForNodes (void)
         continue; // allready know that node address
 
       // this is a new node
-      memcpy(&nodeadr[doomcom.numnodes], &remoteadr,
-      sizeof(nodeadr[doomcom.numnodes]));
-
+      memcpy(&nodeadr[doomcom.numnodes], &remoteadr, sizeof(nodeadr[doomcom.numnodes]));
+      
       doomcom.numnodes++;
 
-      printf("\rFound a node!         \n");
+      printf("found a node!\n");
 
       if (doomcom.numnodes < numnetnodes)
-        printf("Looking for a node [ ]\b\b");
+        printf("Looking for a node... ");
     }
 
     // we are done if all nodes have found all other nodes
@@ -172,9 +191,7 @@ void LookForNodes (void)
     if (time.second == oldsec)
       continue;
     oldsec = time.second;
-
-    printf("%c\b", waitchars[time.second%4]); fflush(stdout);
-    
+   
     doomcom.datalength = sizeof(*setup);
 
     nodesetup[0].nodesfound = doomcom.numnodes;
@@ -185,47 +202,69 @@ void LookForNodes (void)
   }
   while(1);
   
-  printf ("\n");
-
-  // count players
-  total = 0;
-  console = 0;
-
-  for (i = 0; i < numnetnodes; i++)
-  {
-    if (nodesetup[i].drone)
-      continue;
-
-    total++;
-
-    if (total > MAXPLAYERS)
-      Error("More than %i players specified!", MAXPLAYERS);
+  if (numnetnodes == 1)
+    printf ("\r");
   
-    if (memcmp(&nodeadr[i], &nodeadr[0], sizeof(nodeadr[0])) < 0)
-      console++;
-  }
-
-  if (!total)
-    Error("No players specified for game!");
-
-  // allow overriding the automatically assigned player number from command
-  // line because for some reason players will lag differently in netgames.
-  i = CheckParmWithArgs("-player", 1);
-  if (i)
+  // Check that everyone is using the same ticdup setting (game will not work
+  // otherwise). Check for duplicate player numbers. (game will hang on startup)
+  // and that everyone is either using automatic or manually assigned player
+  // numbers (so we don't have one node requesting the same player number
+  // manually that got automatically assigned to another and the game hanging).
+  
+  // check ticdup settings
+  for (i=0; i<numnetnodes; i++)
   {
-    console = atoi(myargv[i + 1]) - 1;
-    if (console > total)
-      console = total;
-    else if (console < 0)
-      console = 0;
+    for (j=0; j<numnetnodes; j++)
+    {
+      if (nodesetup[j].dupwanted != nodesetup[i].dupwanted)
+        Error ("All nodes must use the same ticdup setting!");
+    }
   }
   
-  doomcom.consoleplayer = console;
-  doomcom.numplayers = total;
+  // auto-assign player numbers based on IPX network address?
+  if (nodesetup[0].plnumwanted == -1)
+  {
+    // check that everyone is using automatic assignment
+    for (i=1; i<numnetnodes; i++)
+    {
+      if (nodesetup[i].plnumwanted != -1)
+        Error ("Every node must set player numbers manually or use automatic assignment!");
+    }
+    
+    doomcom.consoleplayer = 0;
+    
+    for (i=0; i<numnetnodes; i++)
+    {
+      if (memcmp (&nodeadr[i], &nodeadr[0], sizeof(nodeadr[0])) < 0)
+        doomcom.consoleplayer++;
+    }
+  }
+  // use manual assignment
+  else
+  {
+    // check that everyone is using manual assignment and that there are
+    // no duplicate player numbers
+    for (i=0; i<numnetnodes; i++)
+    {
+      if (nodesetup[i].plnumwanted == -1)
+        Error ("Every node must set player numbers manually or use automatic assignment!");
 
-  printf("Console is player %i of %i\n", console+1, total);
+      for (j=0; j<numnetnodes; j++)
+      {
+        if (nodesetup[j].plnumwanted == nodesetup[i].plnumwanted && j!=i)
+          Error ("More than one node requested the same player number!");
+      }
+    }
+    
+    doomcom.consoleplayer = nodesetup[0].plnumwanted-1;
+  }
+   
+  doomcom.numplayers = numnetnodes;
+  
+  printf("Console is player %i of %i (%s assignment).\n", doomcom.consoleplayer+1, numnetnodes,
+   nodesetup[0].plnumwanted==-1 ? "automatic" : "manual");
+  printf("TicDup is %i, ExtraTics is %i.\n", doomcom.ticdup, doomcom.extratics);
 }
-
 
 void FindResponseFile (void)
 {
@@ -299,23 +338,23 @@ void FindResponseFile (void)
   }
 }
 
-void ShowHelp (void)
+static void ShowHelp (void)
 {
   printf (
-    "\n"\
-    " -nodes #..........: Set number of players to # (default 2, range 1-8).\n"\
-    " -dup #............: Set ticdup to # (default 1, range 1-9). Larger values will\n"\
-    "                     reduce game frame rate but can help over slow links.\n"\
+    " -nodes #..........: Set number of players to # (default 2, range is 1-8 but\n"\
+    "                     only use more than 4 in Hexen v1.1 and Strife)\n"\
+    " -player #.........: Set player number to # in game instead of automatically\n"\
+    "                     assigning one based on IPX network address. Can be useful\n"\
+    "                     because different players will not experience lag the\n"\
+    "                     same way and which player is best depends on link latency.\n"\
+    "                     If any node uses this option then all nodes must use it.\n"\
+    " -dup #............: Set ticdup to # (default 1, range 1-5). Larger values will\n"\
+    "                     reduce game frame rate but can help over slow links. In\n"\
+    "                     Strife this setting is ignored, engine sets ticdup to 2.\n"\
     " -extratics #......: Set extratics to # (default 0, range 0-7). Larger values\n"\
     "                     will use more bandwidth but can help over links that lose\n"\
     "                     packets.\n"\
     " -extratic.........: Set extratics to 1, for compatibility with source ports.\n"\
-    " -player #.........: Force your player number in game to #. Can be useful\n"\
-    "                     because players will lag differently in netgames. Note\n"\
-    "                     that if one node is is using this parameter, then all\n"\
-    "                     nodes should use it and that more than one node should not\n"\
-    "                     specify the same player #. The game may hang on startup\n"\
-    "                     otherwise.\n"\
     " -port #...........: Use alternate IPX network port # (default is 34460).\n"\
     " -vector 0x##......: Use interrupt vector ## (in hexadecimal). If not specified\n"\
     "                     will try to find a free one between 0x60 and 0x66.\n"\
@@ -338,19 +377,21 @@ static void ShowTitle (void)
 {
   union REGPACK regs;
   
-  // set 80x25 16 color text mode using video bios, will also reset cursor
-  // position
+  // set 80x25 16 color text mode using video bios, will also clear screen
+  // and reset cursor if we were already in this mode
   regs.x.ax = 0x0002;  // AH=0x00 (set mode), AL=0x02 (mode 2 = 80x25 text with 16 colors)
   intr (0x10, &regs);
   
   // print colored string using video bios
   regs.x.ax = 0x1301;  // AH=0x13 (write string) AL=0x01 (write mode bit1 = update cursor)
-  regs.x.bx = 0x001a;  // BH=0x00 (vidpage 0) BL=0x1A (attribute, bright green on blue)
+  regs.x.bx = 0x001a;  // BH=0x00 (vidpage 0) BL=0x1A (attribute: bright green A on blue 1)
   regs.x.cx = strlen(titlelines);
   regs.x.dx = 0;       // DH,DL = start row & column
   regs.x.es = FP_SEG (titlelines);
   regs.x.bp = FP_OFF (titlelines); // ES:BP = address of string to write
   intr (0x10, &regs);
+  
+  printf ("\n");
 }
 
 int main (int argc, char **argv)
@@ -367,6 +408,8 @@ int main (int argc, char **argv)
   doomcom.map = 1;
   doomcom.skill = 2;
   doomcom.deathmatch = 0;
+  // these actually don't do anything anymore after Doom v1.1
+  doomcom.drone = doomcom.angleoffset = 0;
   
   ShowTitle();
 
@@ -384,8 +427,8 @@ int main (int argc, char **argv)
   if (p)
   {
     doomcom.ticdup = atoi (myargv[p+1]);
-    if (doomcom.ticdup > 9)
-      doomcom.ticdup = 9;
+    if (doomcom.ticdup > 5)
+      doomcom.ticdup = 5;
     else if (doomcom.ticdup < 1)
       doomcom.ticdup = 1;
   }
@@ -410,8 +453,8 @@ int main (int argc, char **argv)
   if (p)
   {
     numnetnodes = atoi(myargv[p+1]);
-    if (numnetnodes > MAXPLAYERS)
-      numnetnodes = MAXPLAYERS;
+    if (numnetnodes > MAXNETNODES)
+      numnetnodes = MAXNETNODES;
     else if (numnetnodes < 1)
       numnetnodes = 1;
   }
@@ -443,7 +486,7 @@ int main (int argc, char **argv)
     }
   }
   
-  printf ("\nCommunicating with interrupt vector 0x%x\n", doomcom.intnum);
+  printf ("Communicating with interrupt vector 0x%x\n", doomcom.intnum);
   
   p = CheckParmWithArgs("-port", 1);
   if (p)

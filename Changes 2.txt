@@ -1,0 +1,6 @@
+- ticdup range is now 1-5
+- will give an error message if more than one node tries to request the same player number
+- will also give an error message now if some nodes tried to use automatic player number assignment and some did not (could cause overlapping player numbers)
+- will give an error message if all nodes aren't using the same ticdup setting
+- some minor text / output changes
+- EXE is now compressed with UPX

@@ -55,7 +55,7 @@ void LaunchDOOM (void)
   newargs[myargc + 1] = adrstring;
   newargs[myargc + 2] = NULL;
   
-  printf ("Launching game...\n");
+  printf ("Launching game...\n\n");
   
   // write args to a temporary response file to bypass process.h
   // spawnv/spawnl argument list limitations

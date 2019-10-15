@@ -5,13 +5,14 @@
 
 #define I_ColorBlack(r, g, b) { outp(PEL_WRITE_ADR, 0); outp(PEL_DATA, r); outp(PEL_DATA, g); outp(PEL_DATA, b); };
 
-#define   MAXNETNODES         8              // max computers in a game
-#define   MAXPLAYERS          8              // 4 players max + drones
+// drones aren't actually functional after Doom v1.1 so I removed
+// the extra MAXPLAYERS define, one node equals one player
+#define   MAXNETNODES   8
 
-#define   CMD_SEND  1
-#define   CMD_GET        2
+#define   CMD_SEND      1
+#define   CMD_GET       2
 
-#define   DOOMCOM_ID          0x12345678l
+#define   DOOMCOM_ID    0x12345678l
 
 typedef struct {
   long id;
@@ -35,10 +36,12 @@ typedef struct {
   // info specific to this node
   short consoleplayer;        // 0-3 = player number
   short numplayers;           // 1-4
+  
+  // these don't work anymore
   short angleoffset;          // 1 = left, 0 = center, -1 = right
   short drone;                // 1 = drone
 
-// packet data to be sent
+  // packet data to be sent
   char data[512];
 } doomcom_t;
 
