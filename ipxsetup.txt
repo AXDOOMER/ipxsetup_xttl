@@ -1,0 +1,13 @@
+Well, here is a modified ipxsetup I just compiled. It supports these extra command line parameters:
+
+-dup #: sets ticdup # (1-9), default 1
+-extratics #: sets extratics to # (0-8), default 0
+-extratic: sets extratics to 1
+-player #: force your player number to # in game (1-4)
+-exe name: try to launch "name" instead of "doom" or "doom2"
+
+Note that there is no error checking done for the case where more than one node has specified the same player number and if you do so, it will cause the game to hang on startup. Also, if one node is using -player, then all nodes will have to use it because otherwise the automatically (based on IPX network address) assigned player number of one node may be the same as a manually specified one of some other node.
+
+When using ticdup you have to adjust your mouse sensitivity accordingly. ZDoom and Chocolate Doom may do this for you (I'm not sure) but vanilla does not. For -dup 2, halve your sensitivity. For -dup 3, divide it by 3 and so on.
+
+Btw. in the original ipxsetup source extratics was always being set to 1! But the sources are not for the version that came with the newest Doom releases anyway... (this version doesn't show the blue window when looking for nodes, for example)
